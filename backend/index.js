@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const mysql = require('mysql2');
+const knexLib = require('knex');
 const path = require('path');
 
 dotenv.config();
@@ -25,57 +25,36 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// ✅ MIDDLEWARES POUR PARSING
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// ✅ SERVIR LES FICHIERS STATIQUES (IMAGES)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ✅ CONNEXION MYSQL AMÉLIORÉE
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'b2buser',
-  password: process.env.DB_PASSWORD || 'MotDePasseB2B@123',
-  database: process.env.DB_NAME || 'b2b_voip_db',
-  charset: 'utf8mb4',
-  timezone: '+00:00'
-};
+const knex = knexLib({
+  client: 'mysql2',
+  connection: {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '@Vdneo2286@',
+    database: process.env.DB_NAME || 'b2b_voip_db',
+    charset: 'utf8mb4',
+    timezone: '+00:00'
+  }
+});
 
-const db = mysql.createConnection(dbConfig);
-
-db.connect((err) => {
-  if (err) {
-    console.error('❌ Erreur connexion MySQL :', err.message);
-    console.error('🔧 Vérifiez vos paramètres de connexion dans .env');
+// ✅ TESTER LA CONNEXION KNEX
+knex.raw('SELECT 1+1 AS test')
+  .then(result => {
+    console.log('✅ Connecté à MySQL via Knex');
+    console.log('🔍 Test MySQL réussi:', result[0][0].test);
+  })
+  .catch(err => {
+    console.error('❌ Erreur connexion MySQL (Knex) :', err.message);
     process.exit(1);
-  } else {
-    console.log('✅ Connecté à MySQL');
-    
-    // ✅ TESTER UNE REQUÊTE SIMPLE
-    db.query('SELECT 1 + 1 AS test', (err, results) => {
-      if (err) {
-        console.error('❌ Erreur test MySQL:', err);
-      } else {
-        console.log('🔍 Test MySQL réussi:', results[0].test);
-      }
-    });
-  }
-});
+  });
 
-// ✅ GESTION DES DÉCONNEXIONS MYSQL
-db.on('error', (err) => {
-  if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-    console.log('🔄 Reconnexion MySQL...');
-    db.connect();
-  } else {
-    console.error('❌ Erreur MySQL:', err);
-  }
-});
-
-// ✅ INJECTION DE LA DB DANS TOUTES LES ROUTES
+// ✅ INJECTION DE KNEX DANS TOUTES LES ROUTES
 app.use((req, res, next) => {
-  req.db = db;
+  req.knex = knex;
   next();
 });
 
@@ -89,6 +68,8 @@ app.use((req, res, next) => {
 app.use('/signup', require('./routes/signup'));
 app.use('/signin', require('./routes/signin'));
 app.use('/user', require('./routes/user'));
+app.use('/stats', require('./routes/stats'));
+app.use('/users', require('./routes/users'));
 
 // ✅ ROUTE DE SANTÉ
 app.get('/health', (req, res) => {
@@ -129,14 +110,14 @@ app.use((req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Serveur backend démarré sur http://localhost:${port}`);
   console.log(`📁 Images accessibles sur http://localhost:${port}/uploads/`);
-  console.log(`💾 Base de données: ${dbConfig.database}@${dbConfig.host}`);
+  console.log(`💾 Base de données: ${process.env.DB_NAME || 'b2b_voip_db'}@${process.env.DB_HOST || 'localhost'}`);
 });
 
 // ✅ GESTION PROPRE DE L'ARRÊT
 process.on('SIGINT', () => {
   console.log('\n🛑 Arrêt du serveur...');
-  db.end(() => {
-    console.log('✅ Connexion MySQL fermée');
+  knex.destroy().then(() => {
+    console.log('✅ Connexion MySQL (Knex) fermée');
     process.exit(0);
   });
 });

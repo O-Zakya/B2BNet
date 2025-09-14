@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sipService = require('../services/sipService');
 const router = express.Router();
 
 // ✅ CRÉER LE DOSSIER UPLOADS S'IL N'EXISTE PAS
@@ -85,95 +86,89 @@ router.post('/', upload.single('profilePhoto'), async (req, res) => {
   }
 
   try {
-    // ✅ VÉRIFIER SI L'UTILISATEUR EXISTE DÉJÀ
-    const checkUserQuery = 'SELECT id FROM users WHERE email = ?';
-    
-    req.db.query(checkUserQuery, [email], async (err, results) => {
-      if (err) {
-        console.error('❌ Erreur vérification utilisateur:', err);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Erreur serveur lors de la vérification' 
-        });
-      }
+    // ✅ VÉRIFIER SI L'UTILISATEUR EXISTE DÉJÀ AVEC KNEX
+    const existingUsers = await req.knex('users').select('id').where('email', email);
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ 
+        success: false, 
+        error: 'Un compte existe déjà avec cet email' 
+      });
+    }
 
-      if (results.length > 0) {
-        return res.status(409).json({ 
-          success: false, 
-          error: 'Un compte existe déjà avec cet email' 
-        });
-      }
+    try {
+      // ✅ HASH DU MOT DE PASSE
+      const saltRounds = 12; // Plus sécurisé que 10
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+      // ✅ PRÉPARER LES DONNÉES UTILISATEUR
+      const newUser = {
+        first_name: firstName,
+        last_name: lastName,
+        job_title: jobTitle,
+        email: email.toLowerCase().trim(), // Normaliser l'email
+        phone,
+        country: country || null,
+        language: language || null,
+        password: hashedPassword,
+        profile_photo: req.file ? req.file.filename : null,
+        created_at: new Date(),
+        email_verified: false, // Par défaut non vérifié
+        phone_verified: false
+      };
+
+      console.log('💾 Données à insérer:', { ...newUser, password: '[MASQUÉ]' });
+
+      // ✅ INSERTION EN BASE DE DONNÉES AVEC KNEX
+      let insertedId;
       try {
-        // ✅ HASH DU MOT DE PASSE
-        const saltRounds = 12; // Plus sécurisé que 10
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-        // ✅ PRÉPARER LES DONNÉES UTILISATEUR
-        const newUser = {
-          first_name: firstName,
-          last_name: lastName,
-          job_title: jobTitle,
-          email: email.toLowerCase().trim(), // Normaliser l'email
-          phone,
-          country: country || null,
-          language: language || null,
-          password: hashedPassword,
-          profile_photo: req.file ? req.file.filename : null,
-          created_at: new Date(),
-          email_verified: false, // Par défaut non vérifié
-          phone_verified: false
-        };
-
-        console.log('💾 Données à insérer:', { ...newUser, password: '[MASQUÉ]' });
-
-        // ✅ INSERTION EN BASE DE DONNÉES
-        const insertQuery = 'INSERT INTO users SET ?';
-        
-        req.db.query(insertQuery, newUser, (err, result) => {
-          if (err) {
-            console.error('❌ Erreur insertion MySQL:', err.message);
-            
-            // ✅ SUPPRIMER L'IMAGE SI L'INSERTION ÉCHOUE
-            if (req.file && fs.existsSync(path.join(uploadsDir, req.file.filename))) {
-              fs.unlinkSync(path.join(uploadsDir, req.file.filename));
-              console.log('🗑️ Image supprimée suite à l\'erreur');
-            }
-            
-            return res.status(500).json({ 
-              success: false, 
-              error: 'Erreur lors de la création du compte' 
-            });
-          }
-
-          console.log('✅ Utilisateur créé avec ID:', result.insertId);
-
-          // ✅ RÉPONSE DE SUCCÈS
-          res.status(201).json({ 
-            success: true, 
-            message: 'Compte créé avec succès !',
-            userId: result.insertId,
-            profilePhoto: req.file ? req.file.filename : null
-          });
-        });
-
-      } catch (hashError) {
-        console.error('❌ Erreur hashage mot de passe:', hashError);
+        const result = await req.knex('users').insert(newUser);
+        insertedId = result[0];
+      } catch (err) {
+        console.error('❌ Erreur insertion MySQL:', err.message);
+        // ✅ SUPPRIMER L'IMAGE SI L'INSERTION ÉCHOUE
+        if (req.file && fs.existsSync(path.join(uploadsDir, req.file.filename))) {
+          fs.unlinkSync(path.join(uploadsDir, req.file.filename));
+          console.log('🗑️ Image supprimée suite à l\'erreur');
+        }
         return res.status(500).json({ 
           success: false, 
-          error: 'Erreur lors du traitement du mot de passe' 
+          error: 'Erreur lors de la création du compte' 
         });
       }
-    });
+
+      console.log('✅ Utilisateur créé avec ID:', insertedId);
+
+      // ✅ CRÉER AUTOMATIQUEMENT LE COMPTE SIP
+      try {
+        const sipCredentials = await sipService.createSipAccount(insertedId, email);
+        console.log('📞 Compte SIP créé:', sipCredentials.sipUsername);
+      } catch (sipError) {
+        console.error('⚠️ Erreur création compte SIP (utilisateur créé):', sipError.message);
+        // L'utilisateur est créé même si SIP échoue
+      }
+
+      // ✅ RÉPONSE DE SUCCÈS
+      res.status(201).json({ 
+        success: true, 
+        message: 'Compte créé avec succès !',
+        userId: insertedId,
+        profilePhoto: req.file ? req.file.filename : null
+      });
+
+    } catch (hashError) {
+      console.error('❌ Erreur hashage mot de passe:', hashError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Erreur lors du traitement du mot de passe' 
+      });
+    }
 
   } catch (error) {
     console.error('❌ Erreur générale signup:', error);
-    
     // ✅ NETTOYER LE FICHIER EN CAS D'ERREUR
     if (req.file && fs.existsSync(path.join(uploadsDir, req.file.filename))) {
       fs.unlinkSync(path.join(uploadsDir, req.file.filename));
     }
-    
     res.status(500).json({ 
       success: false, 
       error: 'Erreur serveur interne' 

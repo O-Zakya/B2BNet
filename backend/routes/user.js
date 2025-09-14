@@ -3,6 +3,7 @@ const router = express.Router(); // ✅ UNE SEULE déclaration
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sipService = require('../services/sipService');
 
 // ✅ UNE SEULE déclaration du middleware
 const authenticateToken = require('../middlewares/authMiddleware');
@@ -42,56 +43,37 @@ const upload = multer({
 });
 
 // ✅ Route sécurisée : /user/me → récupère les infos depuis la DB avec la photo
-router.get('/me', authenticateToken, (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    // Requête pour récupérer toutes les infos utilisateur incluant la photo
-    const query = `
-      SELECT id, email, first_name, last_name, job_title, phone, country, language, profile_photo, created_at
-      FROM users 
-      WHERE id = ?
-    `;
-    
-    req.db.query(query, [req.user.id], (err, results) => {
-      if (err) {
-        console.error('❌ Erreur DB dans /me:', err);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Erreur base de données' 
-        });
-      }
-      
-      if (results.length === 0) {
-        return res.status(404).json({ 
-          success: false, 
-          error: 'Utilisateur non trouvé' 
-        });
-      }
-      
-      const user = results[0];
-      
-      console.log('📋 Données utilisateur récupérées:', {
-        userId: user.id,
-        email: user.email,
-        hasPhoto: !!user.profile_photo,
-        photoFile: user.profile_photo
+    const users = await req.knex('users')
+      .select('id', 'email', 'first_name', 'last_name', 'job_title', 'phone', 'country', 'language', 'profile_photo', 'created_at')
+      .where('id', req.user.id);
+    if (users.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Utilisateur non trouvé' 
       });
-      
-      // Retourner les données utilisateur avec la photo (conversion snake_case → camelCase pour le frontend)
-      res.json({
-        success: true,
-        id: user.id,
-        email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        jobTitle: user.job_title,
-        phone: user.phone,
-        country: user.country,
-        language: user.language,
-        profilePhoto: user.profile_photo, // Juste le nom du fichier
-        createdAt: user.created_at
-      });
+    }
+    const user = users[0];
+    console.log('📋 Données utilisateur récupérées:', {
+      userId: user.id,
+      email: user.email,
+      hasPhoto: !!user.profile_photo,
+      photoFile: user.profile_photo
     });
-    
+    res.json({
+      success: true,
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      jobTitle: user.job_title,
+      phone: user.phone,
+      country: user.country,
+      language: user.language,
+      profilePhoto: user.profile_photo,
+      createdAt: user.created_at
+    });
   } catch (error) {
     console.error('❌ Erreur dans /me:', error);
     res.status(500).json({ 
@@ -102,52 +84,42 @@ router.get('/me', authenticateToken, (req, res) => {
 });
 
 // ✅ Route pour mettre à jour le profil utilisateur
-router.put('/profile', authenticateToken, (req, res) => {
+router.put('/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const { firstName, lastName, jobTitle, phone, country, language } = req.body;
-    
     console.log('🔄 Mise à jour profil pour userId:', userId);
     console.log('📝 Nouvelles données:', { firstName, lastName, jobTitle, phone, country, language });
-    
-    const query = `
-      UPDATE users 
-      SET first_name = ?, last_name = ?, job_title = ?, phone = ?, country = ?, language = ?, updated_at = NOW()
-      WHERE id = ?
-    `;
-    
-    req.db.query(query, [firstName, lastName, jobTitle, phone, country, language, userId], (err, results) => {
-      if (err) {
-        console.error('❌ Erreur mise à jour profil:', err);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Erreur lors de la mise à jour du profil' 
-        });
-      }
-      
-      if (results.affectedRows === 0) {
-        return res.status(404).json({ 
-          success: false, 
-          error: 'Utilisateur non trouvé' 
-        });
-      }
-      
-      console.log('✅ Profil mis à jour avec succès');
-      
-      res.json({
-        success: true,
-        message: 'Profil mis à jour avec succès',
-        data: {
-          firstName,
-          lastName,
-          jobTitle,
-          phone,
-          country,
-          language
-        }
+    const result = await req.knex('users')
+      .where('id', userId)
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+        job_title: jobTitle,
+        phone,
+        country,
+        language,
+        updated_at: req.knex.fn.now()
       });
+    if (result === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Utilisateur non trouvé' 
+      });
+    }
+    console.log('✅ Profil mis à jour avec succès');
+    res.json({
+      success: true,
+      message: 'Profil mis à jour avec succès',
+      data: {
+        firstName,
+        lastName,
+        jobTitle,
+        phone,
+        country,
+        language
+      }
     });
-    
   } catch (error) {
     console.error('❌ Erreur dans /profile:', error);
     res.status(500).json({ 
@@ -158,96 +130,80 @@ router.put('/profile', authenticateToken, (req, res) => {
 });
 
 // ✅ Route pour upload de photo de profil
-router.post('/upload-photo', authenticateToken, upload.single('profilePhoto'), (req, res) => {
+router.post('/upload-photo', authenticateToken, upload.single('profilePhoto'), async (req, res) => {
   try {
     console.log('📸 Début upload photo pour userId:', req.user.id);
-    
     if (!req.file) {
       return res.status(400).json({ 
         success: false, 
         error: 'Aucun fichier fourni' 
       });
     }
-    
     const userId = req.user.id;
     const filename = req.file.filename;
-    
     console.log('📁 Fichier uploadé:', {
       filename: filename,
       originalName: req.file.originalname,
       size: req.file.size,
       path: req.file.path
     });
-    
     // Supprimer l'ancienne photo si elle existe
-    const getOldPhotoQuery = 'SELECT profile_photo FROM users WHERE id = ?';
-    
-    req.db.query(getOldPhotoQuery, [userId], (err, results) => {
-      if (err) {
-        console.error('❌ Erreur récupération ancienne photo:', err);
-      } else if (results.length > 0 && results[0].profile_photo) {
-        const oldPhotoPath = path.join(__dirname, '../uploads', results[0].profile_photo);
-        
+    try {
+      const oldUser = await req.knex('users').select('profile_photo').where('id', userId);
+      if (oldUser.length > 0 && oldUser[0].profile_photo) {
+        const oldPhotoPath = path.join(__dirname, '../uploads', oldUser[0].profile_photo);
         fs.unlink(oldPhotoPath, (unlinkErr) => {
           if (unlinkErr) {
             console.log('⚠️ Impossible de supprimer l\'ancienne photo:', unlinkErr.message);
           } else {
-            console.log('🗑️ Ancienne photo supprimée:', results[0].profile_photo);
+            console.log('🗑️ Ancienne photo supprimée:', oldUser[0].profile_photo);
           }
         });
       }
-    });
-    
+    } catch (err) {
+      console.error('❌ Erreur récupération ancienne photo:', err);
+    }
     // Mettre à jour la base de données avec le nouveau nom de fichier
-    const updateQuery = 'UPDATE users SET profile_photo = ?, updated_at = NOW() WHERE id = ?';
-    
-    req.db.query(updateQuery, [filename, userId], (err, results) => {
-      if (err) {
-        console.error('❌ Erreur mise à jour photo dans DB:', err);
-        
-        // Supprimer le fichier uploadé en cas d'erreur DB
-        fs.unlink(req.file.path, (unlinkErr) => {
-          if (unlinkErr) console.error('❌ Erreur suppression fichier après erreur DB:', unlinkErr);
-        });
-        
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Erreur lors de la sauvegarde de la photo' 
-        });
-      }
-      
-      if (results.affectedRows === 0) {
+    try {
+      const result = await req.knex('users')
+        .where('id', userId)
+        .update({ profile_photo: filename, updated_at: req.knex.fn.now() });
+      if (result === 0) {
         // Supprimer le fichier si l'utilisateur n'existe pas
         fs.unlink(req.file.path, (unlinkErr) => {
           if (unlinkErr) console.error('❌ Erreur suppression fichier:', unlinkErr);
         });
-        
         return res.status(404).json({ 
           success: false, 
           error: 'Utilisateur non trouvé' 
         });
       }
-      
       console.log('✅ Photo de profil mise à jour avec succès');
-      
       res.json({
         success: true,
         message: 'Photo de profil mise à jour avec succès',
         profilePhoto: filename,
         photoUrl: `/uploads/${filename}`
       });
-    });
-    
+    } catch (err) {
+      console.error('❌ Erreur mise à jour photo dans DB:', err);
+      // Supprimer le fichier uploadé en cas d'erreur DB
+      fs.unlink(req.file.path, (unlinkErr) => {
+        if (unlinkErr) console.error('❌ Erreur suppression fichier après erreur DB:', unlinkErr);
+      });
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Erreur lors de la sauvegarde de la photo' 
+      });
+    }
   } catch (error) {
     console.error('❌ Erreur dans /upload-photo:', error);
-    
     // Supprimer le fichier en cas d'erreur
     if (req.file) {
       fs.unlink(req.file.path, (unlinkErr) => {
         if (unlinkErr) console.error('❌ Erreur suppression fichier après erreur:', unlinkErr);
       });
     }
-    
     res.status(500).json({ 
       success: false, 
       error: 'Erreur serveur interne' 
@@ -256,42 +212,78 @@ router.post('/upload-photo', authenticateToken, upload.single('profilePhoto'), (
 });
 
 // ✅ Route pour mettre à jour la photo de profil (via nom de fichier)
-router.put('/profile-photo', authenticateToken, (req, res) => {
+router.put('/profile-photo', authenticateToken, async (req, res) => {
   try {
     const { profilePhoto } = req.body;
-    
-    const query = 'UPDATE users SET profile_photo = ?, updated_at = NOW() WHERE id = ?';
-    
-    req.db.query(query, [profilePhoto, req.user.id], (err, results) => {
-      if (err) {
-        console.error('❌ Erreur mise à jour photo:', err);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Erreur lors de la mise à jour' 
-        });
-      }
-      
-      if (results.affectedRows === 0) {
-        return res.status(404).json({ 
-          success: false, 
-          error: 'Utilisateur non trouvé' 
-        });
-      }
-      
-      console.log('✅ Photo de profil mise à jour:', profilePhoto);
-      
-      res.json({
-        success: true,
-        message: 'Photo de profil mise à jour',
-        profilePhoto: profilePhoto
+    const result = await req.knex('users')
+      .where('id', req.user.id)
+      .update({ profile_photo: profilePhoto, updated_at: req.knex.fn.now() });
+    if (result === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Utilisateur non trouvé' 
       });
+    }
+    console.log('✅ Photo de profil mise à jour:', profilePhoto);
+    res.json({
+      success: true,
+      message: 'Photo de profil mise à jour',
+      profilePhoto: profilePhoto
     });
-    
   } catch (error) {
     console.error('❌ Erreur dans /profile-photo:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erreur serveur interne' 
+    });
+  }
+});
+
+// ✅ Route pour récupérer les credentials SIP de l'utilisateur connecté
+router.get('/sip-credentials', authenticateToken, async (req, res) => {
+  try {
+    const sipCredentials = await sipService.getSipCredentials(req.user.id);
+    res.json({
+      success: true,
+      sipCredentials
+    });
+  } catch (error) {
+    console.error('❌ Erreur récupération credentials SIP:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Impossible de récupérer les credentials SIP'
+    });
+  }
+});
+
+// ✅ Route pour rechercher un utilisateur par email (pour les appels)
+router.get('/search/:email', authenticateToken, async (req, res) => {
+  try {
+    const email = req.params.email;
+    const user = await sipService.findUserByEmail(email);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'Utilisateur non trouvé'
+      });
+    }
+    
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        sipUsername: user.sipUsername
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur recherche utilisateur:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors de la recherche'
     });
   }
 });
