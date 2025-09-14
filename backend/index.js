@@ -15,7 +15,10 @@ const corsOptions = {
     'http://localhost:3000',
     'http://localhost:3001', 
     'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001'
+    'http://127.0.0.1:3001',
+    'http://203.161.56.127:3000',
+    'http://203.161.56.127',
+    'https://203.161.56.127'
   ],
   credentials: true,
   optionsSuccessStatus: 200,
@@ -32,7 +35,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const knex = knexLib({
   client: 'mysql2',
   connection: {
-    host: process.env.DB_HOST || 'localhost',
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: process.env.DB_PORT || 3306,
     user: process.env.DB_USER || 'b2bnet',
     password: process.env.DB_PASSWORD || 'B-!too!-BNET1234@',
     database: process.env.DB_NAME || 'B2BNet_db',

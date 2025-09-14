@@ -5,7 +5,8 @@ class SipService {
   constructor() {
     // Connexion à la DB Kamailio
     this.kamailioDb = mysql.createPool({
-      host: process.env.KAMAILIO_DB_HOST || 'localhost',
+      host: process.env.KAMAILIO_DB_HOST || '127.0.0.1',
+      port: process.env.KAMAILIO_DB_PORT || 3306,
       user: process.env.KAMAILIO_DB_USER || 'kamailio',
       password: process.env.KAMAILIO_DB_PASSWORD || 'Kama1l!o2025',
       database: process.env.KAMAILIO_DB_NAME || 'kamailio'
