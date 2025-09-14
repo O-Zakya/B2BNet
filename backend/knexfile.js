@@ -9,9 +9,9 @@ module.exports = {
     client: 'mysql2',
     connection: {
       host:     process.env.DB_HOST     || 'localhost',
-      user:     process.env.DB_USER     || 'b2buser',
-      password: process.env.DB_PASSWORD || 'MotDePasseB2B@123',
-      database: process.env.DB_NAME     || 'b2b_voip_db'
+      user:     process.env.DB_USER     || 'b2bnet',
+      password: process.env.DB_PASSWORD || 'B-!too!-BNET1234@',
+      database: process.env.DB_NAME     || 'B2BNet_db'
     },
     migrations: {
       directory: './migrations'

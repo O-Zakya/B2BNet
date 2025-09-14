@@ -33,9 +33,9 @@ const knex = knexLib({
   client: 'mysql2',
   connection: {
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '@Vdneo2286@',
-    database: process.env.DB_NAME || 'b2b_voip_db',
+    user: process.env.DB_USER || 'b2bnet',
+    password: process.env.DB_PASSWORD || 'B-!too!-BNET1234@',
+    database: process.env.DB_NAME || 'B2BNet_db',
     charset: 'utf8mb4',
     timezone: '+00:00'
   }
@@ -110,7 +110,7 @@ app.use((req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Serveur backend démarré sur http://localhost:${port}`);
   console.log(`📁 Images accessibles sur http://localhost:${port}/uploads/`);
-  console.log(`💾 Base de données: ${process.env.DB_NAME || 'b2b_voip_db'}@${process.env.DB_HOST || 'localhost'}`);
+  console.log(`💾 Base de données: ${process.env.DB_NAME || 'B2BNet_db'}@${process.env.DB_HOST || 'localhost'}`);
 });
 
 // ✅ GESTION PROPRE DE L'ARRÊT

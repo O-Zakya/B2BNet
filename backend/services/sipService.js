@@ -3,20 +3,12 @@ const mysql = require('mysql2/promise');
 
 class SipService {
   constructor() {
-    // Connexion à la DB Kamailio sur le serveur distant
+    // Connexion à la DB Kamailio
     this.kamailioDb = mysql.createPool({
-      host: process.env.KAMAILIO_DB_HOST || '203.161.56.127', // IP du serveur Kamailio
-      port: process.env.KAMAILIO_DB_PORT || 3306,
+      host: process.env.KAMAILIO_DB_HOST || 'localhost',
       user: process.env.KAMAILIO_DB_USER || 'kamailio',
       password: process.env.KAMAILIO_DB_PASSWORD || 'Kama1l!o2025',
-      database: process.env.KAMAILIO_DB_NAME || 'kamailio',
-      connectionLimit: 10,
-      acquireTimeout: 60000,
-      timeout: 60000,
-      // Options de sécurité
-      ssl: false, // Mets à true si tu as SSL configuré
-      connectTimeout: 30000,
-      charset: 'utf8mb4'
+      database: process.env.KAMAILIO_DB_NAME || 'kamailio'
     });
   }
 
@@ -86,29 +78,27 @@ class SipService {
     }
   }
   
-  // Test de connexion à la DB Kamailio
-  async testConnection() {
-    try {
-      const [rows] = await this.kamailioDb.execute('SELECT COUNT(*) as count FROM subscriber');
-      console.log('✅ Connexion Kamailio DB réussie:', rows[0].count, 'utilisateurs SIP');
-      return true;
-    } catch (error) {
-      console.error('❌ Erreur connexion Kamailio DB:', error.message);
-      return false;
-    }
-  }
-
   // Trouver un utilisateur par email pour les appels
   async findUserByEmail(email) {
     try {
-      // ATTENTION: Chercher dans la DB de ta plateforme, pas celle de Kamailio
-      // Il faut utiliser une autre connexion pour ta DB principale
-      console.log('🔍 Recherche utilisateur:', email);
+      // Chercher dans votre table users principale
+      const [rows] = await this.kamailioDb.execute(
+        'SELECT id, first_name, last_name, email FROM B2BNet_db.users WHERE email = ?',
+        [email]
+      );
       
-      // Pour l'instant, simulation - tu devras adapter selon ta config
-      // Utilise req.knex dans les routes ou une autre connexion DB
-      throw new Error('findUserByEmail à adapter avec ta DB principale');
+      if (rows.length === 0) return null;
       
+      const user = rows[0];
+      const sipUsername = `user_${user.id}`;
+      
+      return {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        sipUsername
+      };
     } catch (error) {
       console.error('❌ Erreur recherche utilisateur:', error);
       throw error;

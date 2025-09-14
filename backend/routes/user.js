@@ -239,55 +239,6 @@ router.put('/profile-photo', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ Route pour récupérer les credentials SIP de l'utilisateur connecté
-router.get('/sip-credentials', authenticateToken, async (req, res) => {
-  try {
-    const sipCredentials = await sipService.getSipCredentials(req.user.id);
-    res.json({
-      success: true,
-      sipCredentials
-    });
-  } catch (error) {
-    console.error('❌ Erreur récupération credentials SIP:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Impossible de récupérer les credentials SIP'
-    });
-  }
-});
-
-// ✅ Route pour rechercher un utilisateur par email (pour les appels)
-router.get('/search/:email', authenticateToken, async (req, res) => {
-  try {
-    const email = req.params.email;
-    const user = await sipService.findUserByEmail(email);
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'Utilisateur non trouvé'
-      });
-    }
-    
-    res.json({
-      success: true,
-      user: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        sipUsername: user.sipUsername
-      }
-    });
-  } catch (error) {
-    console.error('❌ Erreur recherche utilisateur:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erreur lors de la recherche'
-    });
-  }
-});
-
 // ✅ Route de test pour vérifier l'accès direct à une image
 router.get('/test-photo/:filename', (req, res) => {
   const filename = req.params.filename;
